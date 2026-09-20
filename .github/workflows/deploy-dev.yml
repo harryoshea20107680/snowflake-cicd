@@ -1,0 +1,60 @@
+name: Deploy to Snowflake DEV
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "database/**"
+      - ".github/workflows/deploy-dev.yml"
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy-dev:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install Snowflake CLI and configure OIDC
+        uses: snowflakedb/snowflake-actions@v3
+        with:
+          use-oidc: true
+          cli-version: "3.16"
+
+      - name: Deploy objects to DEV
+        env:
+          SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+        run: |
+          snow sql \
+            -f database/tables/TRANSACTIONS_T.sql \
+            -f database/views/TRANSACTION_SUMMARY_V.sql \
+            -f database/procedures/SP_ADD_TRANSACTION.sql\
+            --database CC_PROJECT_DEV \
+            --schema APP \
+            --warehouse CICD_WH \
+            --role GITHUB_CICD_ROLE \
+            --enhanced-exit-codes \
+            -x
+
+      - name: Verify deployed objects
+        env:
+          SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+        run: |
+          snow sql \
+            --database CC_PROJECT_DEV \
+            --schema APP \
+            --warehouse CICD_WH \
+            --role GITHUB_CICD_ROLE \
+            -q "
+              SHOW TABLES LIKE 'TRANSACTIONS_T';
+              SHOW VIEWS LIKE 'TRANSACTION_SUMMARY_V';
+              SHOW PROCEDURES LIKE 'SP_ADD_TRANSACTION';
+            " \
+            -x
