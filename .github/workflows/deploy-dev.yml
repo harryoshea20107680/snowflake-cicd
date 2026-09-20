@@ -35,7 +35,7 @@ jobs:
           snow sql \
             -f database/tables/TRANSACTIONS_T.sql \
             -f database/views/TRANSACTION_SUMMARY_V.sql \
-            -f database/procedures/SP_ADD_TRANSACTION.sql\
+            -f database/procedures/SP_ADD_TRANSACTION.sql \
             --database CC_PROJECT_DEV \
             --schema APP \
             --warehouse CICD_WH \
