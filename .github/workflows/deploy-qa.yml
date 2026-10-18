@@ -1,89 +1,39 @@
-
-name: Deploy to Snowflake QA
+name: Deploy approved DEV snapshots to QA
 
 on:
   push:
     branches:
       - main
     paths:
-      - "database/**/*.sql"
-
-  workflow_dispatch:
-
+      - 'dev-snapshots/**'
 
 permissions:
-  id-token: write
   contents: read
+  id-token: write
 
 concurrency:
   group: snowflake-qa-deployment
   cancel-in-progress: false
 
-
 jobs:
   deploy-qa:
-
     if: github.ref == 'refs/heads/main'
-    
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout repository
+      - name: Checkout approved main revision with history
         uses: actions/checkout@v4
         with:
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Install Snowflake CLI and configure OIDC
         uses: snowflakedb/snowflake-actions@v3
         with:
           use-oidc: true
-          cli-version: "3.16"
+          cli-version: '3.16'
 
-      - name: Deploy DEV object definitions to QA
+      - name: Validate and promote changed snapshots
         env:
           SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
-        run: |
-          snow sql \
-            -f database/tables/TRANSACTIONS_T.sql \
-            -f database/views/TRANSACTION_SUMMARY_V.sql \
-            -f database/views/TRANSACTION_METRICS_V.sql \
-            -f database/procedures/SP_ADD_TRANSACTION.sql \
-            --database CC_PROJECT_QA \
-            --schema APP \
-            --warehouse CICD_WH \
-            --role GITHUB_CICD_ROLE \
-            --enhanced-exit-codes \
-            -x
-
-      - name: Verify QA objects exist
-        env:
-          SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
-        run: |
-          snow sql \
-            --database CC_PROJECT_QA \
-            --schema APP \
-            --warehouse CICD_WH \
-            --role GITHUB_CICD_ROLE \
-            --enhanced-exit-codes \
-            -q "
-              SHOW TABLES LIKE 'TRANSACTIONS_T';
-              SHOW VIEWS LIKE 'TRANSACTION_SUMMARY_V';
-              SHOW VIEWS LIKE 'TRANSACTION_METRICS_V';
-              SHOW PROCEDURES LIKE 'SP_ADD_TRANSACTION';
-            " \
-            -x
-
-      - name: Verify promoted metrics view
-        env:
-          SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
-        run: |
-          snow sql \
-            --database CC_PROJECT_QA \
-            --schema APP \
-            --warehouse CICD_WH \
-            --role GITHUB_CICD_ROLE \
-            --enhanced-exit-codes \
-            -q "SELECT TOTAL_TRANSACTIONS, TOTAL_AMOUNT
-                FROM CC_PROJECT_QA.APP.TRANSACTION_METRICS_V" \
-            -x
-
+          BASE_SHA: ${{ github.event.before }}
+        run: python3 scripts/promote_qa.py --deploy --base "$BASE_SHA"
