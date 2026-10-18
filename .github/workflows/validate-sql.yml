@@ -1,0 +1,75 @@
+
+name: Validate Snowflake SQL
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: SQL Policy Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Check SQL deployment policy
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          import sys
+
+          files = sorted(Path("database").rglob("*.sql"))
+          errors = []
+
+          if not files:
+              errors.append("No SQL files found.")
+
+          blocked = re.compile(
+              r"(?im)(?:^|;)\s*"
+              r"(DROP|TRUNCATE|DELETE|UPDATE|GRANT|REVOKE|ALTER)\b"
+          )
+
+          allowed_start = re.compile(
+              r"(?is)^\s*CREATE\s+"
+              r"(?:OR\s+REPLACE\s+)?"
+              r"(TABLE|VIEW|PROCEDURE)\b"
+          )
+
+          for file in files:
+              sql = file.read_text(encoding="utf-8")
+
+              # Remove basic SQL comments
+              sql = re.sub(r"/\*.*?\*/", "", sql, flags=re.S)
+              sql = re.sub(r"(?m)^\s*--[^\n]*", "", sql)
+
+              if not allowed_start.match(sql):
+                  errors.append(
+                      f"{file}: Expected CREATE TABLE, "
+                      "VIEW or PROCEDURE."
+                  )
+
+              match = blocked.search(sql)
+              if match:
+                  errors.append(
+                      f"{file}: Prohibited statement: "
+                      f"{match.group(1)}"
+                  )
+
+          for error in errors:
+              print(f"::error::{error}")
+
+          if errors:
+              print("SQL policy validation FAILED")
+              sys.exit(1)
+
+          print(f"SQL policy validation PASSED ({len(files)} files)")
+          PY
