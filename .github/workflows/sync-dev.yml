@@ -1,109 +1,53 @@
-
-name: Sync Snowflake DEV to GitHub
+name: Sync Snowflake DEV snapshots
 
 on:
   workflow_dispatch:
 
 permissions:
-  id-token: write
   contents: write
+  id-token: write
+
+concurrency:
+  group: snowflake-dev-snapshot
+  cancel-in-progress: false
 
 jobs:
   sync-dev:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout repository
+      - name: Checkout main
         uses: actions/checkout@v4
+        with:
+          persist-credentials: true
 
       - name: Install Snowflake CLI and configure OIDC
         uses: snowflakedb/snowflake-actions@v3
         with:
           use-oidc: true
-          cli-version: "3.16"
+          cli-version: '3.16'
 
-      - name: Extract view DDL from Snowflake DEV
+      - name: Discover and snapshot DEV SQL objects
         env:
           SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
-        run: |
-          snow sql \
-            --database CC_PROJECT_DEV \
-            --schema APP \
-            --warehouse CICD_WH \
-            --role GITHUB_CICD_ROLE \
-            -q "SELECT GET_DDL(
-                  'VIEW',
-                  'CC_PROJECT_DEV.APP.TRANSACTION_METRICS_V',
-                  FALSE
-                ) AS DDL" \
-            --format JSON \
-            --silent \
-            --enhanced-exit-codes \
-            -x > "$RUNNER_TEMP/view.json"
+        run: python3 scripts/sync_dev.py
 
-      - name: Generate SQL file
-        run: |
-          python3 - <<'PY'
-          import json
-          import os
-          import re
-          from pathlib import Path
-
-          source = Path(os.environ["RUNNER_TEMP"]) / "view.json"
-          rows = json.loads(source.read_text(encoding="utf-8"))
-
-          if len(rows) != 1 or not isinstance(rows[0].get("DDL"), str):
-              raise ValueError("Unexpected GET_DDL output")
-
-          ddl = rows[0]["DDL"].strip()
-
-          if not re.match(
-              r"(?is)^\s*CREATE\s+(?:OR\s+REPLACE\s+)?"
-              r"VIEW\s+TRANSACTION_METRICS_V\b",
-              ddl
-          ):
-              raise ValueError("Unexpected object definition")
-
-          # Reject hardcoded DEV references before promotion.
-          if "CC_PROJECT_DEV" in ddl.upper():
-              raise ValueError("DDL contains a DEV database reference")
-
-          output = Path(
-              "database/views/TRANSACTION_METRICS_V.sql"
-          )
-          output.parent.mkdir(parents=True, exist_ok=True)
-          output.write_text(ddl + "\n", encoding="utf-8")
-
-          print(f"Extracted {output} from Snowflake DEV")
-          PY
-
-      - name: Commit extracted SQL to feature branch
+      - name: Commit snapshots for review
         env:
           GH_REPO: ${{ github.repository }}
         run: |
-          BRANCH="sync/dev-metrics-${GITHUB_RUN_ID}"
-
-          git config user.name "github-actions[bot]"
-          git config user.email \
-            "41898282+github-actions[bot]@users.noreply.github.com"
-
-          git switch -c "$BRANCH"
-
-          git add database/views/TRANSACTION_METRICS_V.sql
-
+          git add -A dev-snapshots/
           if git diff --cached --quiet; then
-            echo "No changes detected in DEV view."
+            echo 'No DEV definition changes found.' >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
 
-          git commit -m "Sync transaction metrics view from DEV"
+          BRANCH="sync/dev-all-${GITHUB_RUN_ID}"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git switch -c "$BRANCH"
+          git commit -m 'Snapshot Snowflake DEV object definitions'
           git push origin "HEAD:refs/heads/$BRANCH"
 
-          echo "## DEV synchronization completed" \
-            >> "$GITHUB_STEP_SUMMARY"
-
-          echo "Open a pull request to review changes:" \
-            >> "$GITHUB_STEP_SUMMARY"
-
-          echo "https://github.com/${GH_REPO}/compare/main...${BRANCH}?expand=1" \
-            >> "$GITHUB_STEP_SUMMARY"
+          echo "Review changes and open a pull request:" >> "$GITHUB_STEP_SUMMARY"
+          echo "https://github.com/${GH_REPO}/compare/main...${BRANCH}?expand=1" >> "$GITHUB_STEP_SUMMARY"
