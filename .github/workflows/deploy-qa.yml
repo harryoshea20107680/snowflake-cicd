@@ -1,5 +1,5 @@
 
-name: Deploy to Snowflake QA (Manual Smoke Test)
+name: Deploy to Snowflake QA
 
 on:
   workflow_dispatch:
