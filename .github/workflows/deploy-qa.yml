@@ -1,0 +1,58 @@
+
+name: Deploy to Snowflake QA (Manual Smoke Test)
+
+# Manual test only; PR review and automatic promotion gates come later.
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy-qa:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install Snowflake CLI and configure OIDC
+        uses: snowflakedb/snowflake-actions@v3
+        with:
+          use-oidc: true
+          cli-version: "3.16"
+
+      - name: Deploy DEV object definitions to QA
+        env:
+          SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+        run: |
+          snow sql \
+            -f database/tables/TRANSACTIONS_T.sql \
+            -f database/views/TRANSACTION_SUMMARY_V.sql \
+            -f database/procedures/SP_ADD_TRANSACTION.sql \
+            --database CC_PROJECT_QA \
+            --schema APP \
+            --warehouse CICD_WH \
+            --role GITHUB_CICD_ROLE \
+            --enhanced-exit-codes \
+            -x
+
+      - name: Verify QA objects exist
+        env:
+          SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+        run: |
+          snow sql \
+            --database CC_PROJECT_QA \
+            --schema APP \
+            --warehouse CICD_WH \
+            --role GITHUB_CICD_ROLE \
+            --enhanced-exit-codes \
+            -q "
+              SHOW TABLES LIKE 'TRANSACTIONS_T';
+              SHOW VIEWS LIKE 'TRANSACTION_SUMMARY_V';
+              SHOW PROCEDURES LIKE 'SP_ADD_TRANSACTION';
+            " \
+            -x
