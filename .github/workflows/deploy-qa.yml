@@ -31,6 +31,7 @@ jobs:
           snow sql \
             -f database/tables/TRANSACTIONS_T.sql \
             -f database/views/TRANSACTION_SUMMARY_V.sql \
+            -f database/views/TRANSACTION_METRICS_V.sql \
             -f database/procedures/SP_ADD_TRANSACTION.sql \
             --database CC_PROJECT_QA \
             --schema APP \
@@ -52,6 +53,22 @@ jobs:
             -q "
               SHOW TABLES LIKE 'TRANSACTIONS_T';
               SHOW VIEWS LIKE 'TRANSACTION_SUMMARY_V';
+              SHOW VIEWS LIKE 'TRANSACTION_METRICS_V';
               SHOW PROCEDURES LIKE 'SP_ADD_TRANSACTION';
             " \
             -x
+
+      - name: Verify promoted metrics view
+        env:
+          SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+        run: |
+          snow sql \
+            --database CC_PROJECT_QA \
+            --schema APP \
+            --warehouse CICD_WH \
+            --role GITHUB_CICD_ROLE \
+            --enhanced-exit-codes \
+            -q "SELECT TOTAL_TRANSACTIONS, TOTAL_AMOUNT
+                FROM CC_PROJECT_QA.APP.TRANSACTION_METRICS_V" \
+            -x
+
