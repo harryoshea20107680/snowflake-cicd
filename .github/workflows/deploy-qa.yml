@@ -1,7 +1,6 @@
 
 name: Deploy to Snowflake QA (Manual Smoke Test)
 
-# Manual test only; PR review and automatic promotion gates come later.
 on:
   workflow_dispatch:
 
