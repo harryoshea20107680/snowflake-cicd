@@ -1,4 +1,3 @@
-
 name: Validate Snowflake SQL
 
 on:
@@ -13,63 +12,49 @@ jobs:
   validate:
     name: SQL Policy Check
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout repository
+      - name: Checkout repository with history
         uses: actions/checkout@v4
         with:
+          fetch-depth: 0
           persist-credentials: false
 
-      - name: Check SQL deployment policy
+      - name: Validate snapshot promotion policy
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: python3 scripts/promote_qa.py --check --base "$BASE_SHA"
+
+      - name: Check existing SQL deployment policy
         run: |
           python3 - <<'PY'
           from pathlib import Path
           import re
           import sys
-
-          files = sorted(Path("database").rglob("*.sql"))
+          files = sorted(Path('database').rglob('*.sql'))
           errors = []
-
           if not files:
-              errors.append("No SQL files found.")
-
+              errors.append('No SQL files found.')
           blocked = re.compile(
-              r"(?im)(?:^|;)\s*"
-              r"(DROP|TRUNCATE|DELETE|UPDATE|GRANT|REVOKE|ALTER)\b"
+              r'(?im)(?:^|;)\s*'
+              r'(DROP|TRUNCATE|DELETE|UPDATE|GRANT|REVOKE|ALTER)\b'
           )
-
           allowed_start = re.compile(
-              r"(?is)^\s*CREATE\s+"
-              r"(?:OR\s+REPLACE\s+)?"
-              r"(TABLE|VIEW|PROCEDURE)\b"
+              r'(?is)^\s*CREATE\s+'
+              r'(?:OR\s+REPLACE\s+)?'
+              r'(TABLE|VIEW|PROCEDURE)\b'
           )
-
           for file in files:
-              sql = file.read_text(encoding="utf-8")
-
-              # Remove basic SQL comments
-              sql = re.sub(r"/\*.*?\*/", "", sql, flags=re.S)
-              sql = re.sub(r"(?m)^\s*--[^\n]*", "", sql)
-
+              sql = file.read_text(encoding='utf-8')
+              sql = re.sub(r'/\*.*?\*/', '', sql, flags=re.S)
+              sql = re.sub(r'(?m)^\s*--[^\n]*', '', sql)
               if not allowed_start.match(sql):
-                  errors.append(
-                      f"{file}: Expected CREATE TABLE, "
-                      "VIEW or PROCEDURE."
-                  )
-
+                  errors.append(f'{file}: Expected CREATE TABLE, VIEW or PROCEDURE.')
               match = blocked.search(sql)
               if match:
-                  errors.append(
-                      f"{file}: Prohibited statement: "
-                      f"{match.group(1)}"
-                  )
-
+                  errors.append(f'{file}: Prohibited statement: {match.group(1)}')
           for error in errors:
-              print(f"::error::{error}")
-
+              print(f'::error::{error}')
           if errors:
-              print("SQL policy validation FAILED")
               sys.exit(1)
-
-          print(f"SQL policy validation PASSED ({len(files)} files)")
+          print(f'SQL policy validation PASSED ({len(files)} files)')
           PY
