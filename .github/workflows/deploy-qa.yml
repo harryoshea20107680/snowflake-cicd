@@ -43,3 +43,60 @@ jobs:
           SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
           BASE_SHA: ${{ github.event.before }}
         run: python3 scripts/verify_qa.py --base "$BASE_SHA"
+
+  audit-deployment:
+    name: Record deployment audit in AWS
+    needs: deploy-qa
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout deployment revision
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Authenticate to AWS using OIDC
+        uses: aws-actions/configure-aws-credentials@v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_AUDIT_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Send deployment result to Lambda
+        env:
+          FUNCTION_NAME: ${{ vars.AWS_AUDIT_LAMBDA_NAME }}
+          DEPLOY_STATUS: ${{ needs.deploy-qa.result }}
+          BASE_SHA: ${{ github.event.before }}
+        run: |
+          OBJECTS=$(git diff --name-only "$BASE_SHA" HEAD -- dev-snapshots/ \
+            | awk '/\.sql$/ {print}' | paste -sd ',' -)
+
+          PAYLOAD=$(jq -n \
+            --arg repo "$GITHUB_REPOSITORY" \
+            --arg run "$GITHUB_RUN_ID" \
+            --arg status "$DEPLOY_STATUS" \
+            --arg objects "$OBJECTS" \
+            '{
+              repository: $repo,
+              environment: "QA",
+              run_id: $run,
+              status: $status,
+              object: $objects,
+              verification: (
+                if $status == "success"
+                then "passed"
+                else "failed_or_incomplete"
+                end
+              )
+            }')
+
+          aws lambda invoke \
+            --function-name "$FUNCTION_NAME" \
+            --cli-binary-format raw-in-base64-out \
+            --payload "$PAYLOAD" \
+            /tmp/audit-response.json
+
+          cat /tmp/audit-response.json
+          jq -e '.statusCode == 200 and ((.body | fromjson).logged == true)' \
+            /tmp/audit-response.json
