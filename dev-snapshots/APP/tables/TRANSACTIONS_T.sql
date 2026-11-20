@@ -6,3 +6,4 @@ create or replace TABLE TRANSACTIONS_T (
 	CREATED_AT TIMESTAMP_NTZ(9) DEFAULT CURRENT_TIMESTAMP(),
 	constraint PK_TRANSACTIONS primary key (TRANSACTION_ID)
 );
+-- TEST: existing table modification must be blocked
