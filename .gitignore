@@ -1,0 +1,14 @@
+# macOS metadata
+.DS_Store
+
+# Python generated files
+__pycache__/
+*.py[cod]
+
+# Virtual environments
+.venv/
+venv/
+
+# Editor files
+.vscode/
+.idea/
