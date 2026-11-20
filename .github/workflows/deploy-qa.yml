@@ -37,3 +37,9 @@ jobs:
           SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
           BASE_SHA: ${{ github.event.before }}
         run: python3 scripts/promote_qa.py --deploy --base "$BASE_SHA"
+
+      - name: Verify promoted QA objects
+        env:
+          SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+          BASE_SHA: ${{ github.event.before }}
+        run: python3 scripts/verify_qa.py --base "$BASE_SHA"

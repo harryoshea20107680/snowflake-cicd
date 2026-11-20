@@ -19,6 +19,9 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Run offline QA verification tests
+        run: python3 -m unittest discover -s tests -v
+
       - name: Validate snapshot promotion policy
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
