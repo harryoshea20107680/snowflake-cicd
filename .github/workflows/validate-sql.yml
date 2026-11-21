@@ -22,7 +22,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Run offline QA verification tests
+      - name: Run offline deployment verification tests
         run: python3 -m unittest discover -s tests -v
 
       - name: Enforce DEV to QA to STAGE to PROD promotion order
@@ -43,9 +43,9 @@ jobs:
           PR_BASE: ${{ github.base_ref }}
         run: |
           if [ "$PR_BASE" = "dev" ]; then
-            python3 scripts/promote_qa.py --check --source-sync --base "$BASE_SHA"
+            python3 scripts/promote_snapshots.py --check --source-sync --base "$BASE_SHA"
           else
-            python3 scripts/promote_qa.py --check --base "$BASE_SHA"
+            python3 scripts/promote_snapshots.py --check --base "$BASE_SHA"
           fi
 
       - name: Check existing SQL deployment policy
