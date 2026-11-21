@@ -5,8 +5,8 @@
 | Git branch | Snowflake database | How code reaches it |
 |---|---|---|
 | `dev` | `CC_PROJECT_DEV` | Edit directly in Snowflake DEV, run `sync-dev.yml` on `dev`, then merge generated snapshot PR into `dev` |
-| `qa` | `CC_PROJECT_QA` | Approved `dev → qa` PR triggers deployment and verification |
-| `stage` | `CC_PROJECT_STAGE` | Approved `qa → stage` PR triggers deployment and verification |
+| `qa` | `CC_PROJECT_QA` | Approved `dev → qa` PR triggers deployment, verification and AWS audit |
+| `stage` | `CC_PROJECT_STAGE` | Approved `qa → stage` PR triggers deployment, verification and AWS audit |
 | `main` | `CC_PROJECT_PROD` | Approved `stage → main` PR triggers deployment, verification and AWS Lambda audit |
 
 `dev-snapshots/` always contains **DEV-sourced** object definitions. QA/STAGE/PROD receive the same version-controlled DDL through reviewed PRs; they do not contribute replacement source snapshots. These are database environments, not separate geographic cloud regions.
@@ -17,7 +17,7 @@
 - The PR workflow validates the route, tests the Python verifier and rejects unsupported or unsafe snapshot changes.
 - `scripts/promote_snapshots.py` deploys changed, approved snapshots to `CC_PROJECT_QA`, `CC_PROJECT_STAGE` or `CC_PROJECT_PROD` according to `SNOWFLAKE_TARGET`.
 - `scripts/verify_deployment.py` performs a non-destructive smoke verification of objects in that target environment.
-- GitHub Actions authenticates to Snowflake via OIDC. The AWS auditing job authenticates to AWS with OIDC and invokes Lambda **only after the PROD/main workflow**, because the AWS IAM trust currently covers main.
+- GitHub Actions authenticates to Snowflake via OIDC. The AWS auditing job uses AWS OIDC to invoke Lambda after QA, STAGE and PROD deployments. It is also scheduled after unsuccessful deployments, to record failed or incomplete outcomes. The IAM trust policy must explicitly allow all three branch subjects.
 
 ## Verified demonstration (21 November 2026)
 
@@ -35,7 +35,7 @@ The view is self-contained (`SELECT 1`), so it proves the promotion path without
 - New tables cannot overwrite an existing target table. Other existing objects may need reconciliation.
 - Procedures are verified by signature, not executed. Cross-object dependencies, grants, data migration, drift detection and rollback are not implemented.
 - The branch ruleset currently has **zero required independent reviewers**. A required passing check alone is not independent approval.
-- AWS/CloudWatch audit currently covers PROD only. A deployment outcome audit does not guarantee atomic database rollback.
+- AWS/CloudWatch audit covers QA, STAGE and PROD after the AWS IAM trust policy is updated. Audit events report workflow outcomes, not an atomic database transaction or guaranteed rollback. Failed deployments may leave partial changes.
 - Direct commits that bypass protected-branch PR checks would invalidate the route-control assumptions.
 
 See [Deployment verification](DEPLOYMENT-VERIFICATION.md) and the [repository overview](../README.md).
