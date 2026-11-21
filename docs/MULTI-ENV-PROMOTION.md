@@ -1,41 +1,41 @@
 # Multi-environment Snowflake CI/CD proof of concept
 
-## Target branch and database mapping
+## Environment and branch mapping
 
-| Git branch | Snowflake database | How it changes |
+| Git branch | Snowflake database | How code reaches it |
 |---|---|---|
-| `dev` | `CC_PROJECT_DEV` | Developer edits in Snowflake DEV, then manually runs `sync-dev.yml` on `dev`, opens PR from generated snapshot branch into `dev` |
-| `qa` | `CC_PROJECT_QA` | PR **dev → qa**, validate, merge; deploy and verify on qa push |
-| `stage` | `CC_PROJECT_STAGE` | PR **qa → stage**, validate, merge; deploy and verify on stage push |
-| `main` | `CC_PROJECT_PROD` | PR **stage → main**, validate, approve, merge; deploy and verify on main push, then invoke AWS Lambda audit |
+| `dev` | `CC_PROJECT_DEV` | Edit directly in Snowflake DEV, run `sync-dev.yml` on `dev`, then merge generated snapshot PR into `dev` |
+| `qa` | `CC_PROJECT_QA` | Approved `dev → qa` PR triggers deployment and verification |
+| `stage` | `CC_PROJECT_STAGE` | Approved `qa → stage` PR triggers deployment and verification |
+| `main` | `CC_PROJECT_PROD` | Approved `stage → main` PR triggers deployment, verification and AWS Lambda audit |
 
-Snapshot files are captured **only from DEV**. Subsequent PRs promote the same approved SQL text; they must not re-extract QA/STAGE and overwrite version-controlled source definitions. `dev` has no deployment workflow because changes are already made there in Snowflake.
+`dev-snapshots/` always contains **DEV-sourced** object definitions. QA/STAGE/PROD receive the same version-controlled DDL through reviewed PRs; they do not contribute replacement source snapshots. These are database environments, not separate geographic cloud regions.
 
-## Critical setup order
+## Controls
 
-1. Open the infrastructure PR **against existing `main`**. It changes the original deploy-qa workflow into a multi-environment workflow, so no duplicate main→QA deployments can occur.
-2. Merge the infrastructure PR after checks pass.
-3. **Only after the merge**, create `dev`, `qa` and `stage` from the updated main commit. This ensures each long-lived branch has the required workflow files and scripts.
-4. In GitHub Settings > Branches/Rulesets, protect **all four branches** from direct snapshot pushes and force pushes, require `SQL Policy Check` on PRs, and require a reviewer approval for `main` production promotion. The source-route validation will reject out-of-order snapshot PRs; branch protection stops people skipping PRs entirely.
-5. Ensure the Snowflake GitHub OIDC service user can authenticate from qa/stage/main branches, and that `GITHUB_CICD_ROLE` has the required (carefully scoped) privileges on the QA/STAGE/PROD target databases, schemas, and warehouse. Branch-specific Snowflake deploy roles would be preferable beyond this POC.
-6. Confirm AWS IAM role trust still covers `main`. To preserve the currently working AWS IAM trust, this first iteration sends **PROD/main deployment audits only**. QA/STAGE remain visible in GitHub Actions. Extend AWS trust deliberately before enabling their AWS audit jobs.
-7. Make a **new self-contained view** in DEV (e.g. `SELECT 1`) and promote it dev → qa → stage → main. Avoid expecting existing historical main snapshots to have been deployed to STAGE/PROD: baseline differences require reconciliation.
+- GitHub ruleset `Snowflake Environment Branch Protection` targets all four environment branches. It requires a PR and passing **`SQL Policy Check`**, blocks force pushes, and prevents deletion. It currently requires **zero approving reviews**, so it does not guarantee independent sign-off.
+- The PR workflow validates the route, tests the Python verifier and rejects unsupported or unsafe snapshot changes.
+- `scripts/promote_snapshots.py` deploys changed, approved snapshots to `CC_PROJECT_QA`, `CC_PROJECT_STAGE` or `CC_PROJECT_PROD` according to `SNOWFLAKE_TARGET`.
+- `scripts/verify_deployment.py` performs a non-destructive smoke verification of objects in that target environment.
+- GitHub Actions authenticates to Snowflake via OIDC. The AWS auditing job authenticates to AWS with OIDC and invokes Lambda **only after the PROD/main workflow**, because the AWS IAM trust currently covers main.
 
-## First end-to-end demo
+## Verified demonstration (21 November 2026)
 
-- On `dev` run the **Sync Snowflake DEV snapshots** workflow, then open the generated PR to `dev`.
-- Open dev→qa PR, merge, and observe `CC_PROJECT_QA` deployment and independent verification.
-- Open qa→stage PR, merge, and observe `CC_PROJECT_STAGE` deployment and independent verification.
-- Open stage→main PR, review and approve, merge, and observe `CC_PROJECT_PROD` deployment, independent verification, and CloudWatch PROD audit event.
-- Try a PR directly from dev→stage (with snapshot changes) and confirm the route check rejects it; do not merge.
+1. [PR #21](https://github.com/harryoshea20107680/snowflake-cicd/pull/21) — captured `CICD_FULL_PIPELINE_V` from Snowflake DEV into `dev`.
+2. [PR #22](https://github.com/harryoshea20107680/snowflake-cicd/pull/22) — promoted from `dev` to QA; deployment and verification passed.
+3. [PR #23](https://github.com/harryoshea20107680/snowflake-cicd/pull/23) — promoted from `qa` to STAGE; deployment and verification passed.
+4. [PR #24](https://github.com/harryoshea20107680/snowflake-cicd/pull/24) — promoted from `stage` to PROD; deployment, verification and AWS Lambda invocation passed.
 
-## Constraints and limitations
+The view is self-contained (`SELECT 1`), so it proves the promotion path without relying on un-reconciled historical tables. A successful workflow is not proof of full data parity or correctness in every environment.
 
-- Git branches are **versioned release records**, not direct proof that every SQL object already exists in its mapped database. Existing `main` snapshots were previously QA snapshots; backfill or reconcile before claiming complete STAGE/PROD parity.
-- Validation is a conservative, intentionally limited single-DDL policy, not a general SQL parser. Existing table modifications, dropped snapshots, and unsafe/unknown definitions fail closed on promotions.
-- `--source-sync` relaxes table-change rejection only for DEV snapshot review; changes still cannot promote to QA without a migration process.
-- New tables are created only if absent in the target, which may require reconciliation for pre-existing manually created tables.
-- Procedures are not executed by smoke checks. Cross-object dependencies, data migration, grants on replaced objects, reversions, drift detection, and automatic rollback are not yet supported.
-- Workflow push triggers depend on GitHub branch rules. Without branch protection, users with write access could push directly to an environment branch and bypass PR route checks.
-- `SNOWFLAKE_TARGET` controls the destination (QA/STAGE/PROD); no target outside those three is accepted.
-- Audit job logs deployment **outcomes**, not guaranteed database transactional state. Failed deployments may have partially applied changes.
+## Limitations
+
+- SQL validation is intentionally narrow; it is not a full parser or a production security review.
+- Existing table modifications and snapshot removals require reviewed migrations. `--source-sync` permits changed-table definitions only during DEV-source review, not deployment.
+- New tables cannot overwrite an existing target table. Other existing objects may need reconciliation.
+- Procedures are verified by signature, not executed. Cross-object dependencies, grants, data migration, drift detection and rollback are not implemented.
+- The branch ruleset currently has **zero required independent reviewers**. A required passing check alone is not independent approval.
+- AWS/CloudWatch audit currently covers PROD only. A deployment outcome audit does not guarantee atomic database rollback.
+- Direct commits that bypass protected-branch PR checks would invalidate the route-control assumptions.
+
+See [Deployment verification](DEPLOYMENT-VERIFICATION.md) and the [repository overview](../README.md).
