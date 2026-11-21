@@ -50,11 +50,12 @@ jobs:
         run: python3 scripts/verify_deployment.py --base "$BASE_SHA"
 
   audit-deployment:
-    name: Record PROD deployment audit in AWS
+    name: Record ${{ github.ref_name == 'qa' && 'QA' || github.ref_name == 'stage' && 'STAGE' || 'PROD' }} deployment audit in AWS
     needs: deploy-environment
-    # AWS role currently trusts the main branch OIDC subject only.
-    if: ${{ always() && github.ref == 'refs/heads/main' }}
+    if: ${{ always() && (github.ref_name == 'qa' || github.ref_name == 'stage' || github.ref_name == 'main') }}
     runs-on: ubuntu-latest
+    env:
+      AUDIT_ENV: ${{ github.ref_name == 'qa' && 'QA' || github.ref_name == 'stage' && 'STAGE' || 'PROD' }}
 
     steps:
       - name: Checkout deployment revision
@@ -82,10 +83,11 @@ jobs:
             --arg repo "$GITHUB_REPOSITORY" \
             --arg run "$GITHUB_RUN_ID" \
             --arg status "$DEPLOY_STATUS" \
+            --arg environment "$AUDIT_ENV" \
             --arg objects "$OBJECTS" \
             '{
               repository: $repo,
-              environment: "PROD",
+              environment: $environment,
               run_id: $run,
               status: $status,
               object: $objects,
