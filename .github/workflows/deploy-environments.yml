@@ -19,6 +19,7 @@ concurrency:
 
 jobs:
   deploy-environment:
+    name: Deploy and verify ${{ github.ref_name == 'qa' && 'QA' || github.ref_name == 'stage' && 'STAGE' || 'PROD' }}
     if: ${{ github.ref_name == 'qa' || github.ref_name == 'stage' || github.ref_name == 'main' }}
     env:
       SNOWFLAKE_TARGET: ${{ github.ref_name == 'qa' && 'QA' || github.ref_name == 'stage' && 'STAGE' || 'PROD' }}
@@ -40,16 +41,16 @@ jobs:
         env:
           SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
           BASE_SHA: ${{ github.event.before }}
-        run: python3 scripts/promote_qa.py --deploy --base "$BASE_SHA"
+        run: python3 scripts/promote_snapshots.py --deploy --base "$BASE_SHA"
 
       - name: Verify promoted environment objects
         env:
           SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
           BASE_SHA: ${{ github.event.before }}
-        run: python3 scripts/verify_qa.py --base "$BASE_SHA"
+        run: python3 scripts/verify_deployment.py --base "$BASE_SHA"
 
   audit-deployment:
-    name: Record deployment audit in AWS
+    name: Record PROD deployment audit in AWS
     needs: deploy-environment
     # AWS role currently trusts the main branch OIDC subject only.
     if: ${{ always() && github.ref == 'refs/heads/main' }}
