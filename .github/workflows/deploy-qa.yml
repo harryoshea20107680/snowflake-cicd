@@ -1,8 +1,10 @@
-name: Deploy approved DEV snapshots to QA
+name: Promote approved SQL snapshots across environments
 
 on:
   push:
     branches:
+      - qa
+      - stage
       - main
     paths:
       - 'dev-snapshots/**'
@@ -12,15 +14,17 @@ permissions:
   id-token: write
 
 concurrency:
-  group: snowflake-qa-deployment
+  group: snowflake-promotion-${{ github.ref_name }}
   cancel-in-progress: false
 
 jobs:
-  deploy-qa:
-    if: github.ref == 'refs/heads/main'
+  deploy-environment:
+    if: ${{ github.ref_name == 'qa' || github.ref_name == 'stage' || github.ref_name == 'main' }}
+    env:
+      SNOWFLAKE_TARGET: ${{ github.ref_name == 'qa' && 'QA' || github.ref_name == 'stage' && 'STAGE' || 'PROD' }}
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout approved main revision with history
+      - name: Checkout approved environment branch with history
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -38,7 +42,7 @@ jobs:
           BASE_SHA: ${{ github.event.before }}
         run: python3 scripts/promote_qa.py --deploy --base "$BASE_SHA"
 
-      - name: Verify promoted QA objects
+      - name: Verify promoted environment objects
         env:
           SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
           BASE_SHA: ${{ github.event.before }}
@@ -46,8 +50,9 @@ jobs:
 
   audit-deployment:
     name: Record deployment audit in AWS
-    needs: deploy-qa
-    if: ${{ always() }}
+    needs: deploy-environment
+    # AWS role currently trusts the main branch OIDC subject only.
+    if: ${{ always() && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
 
     steps:
@@ -66,7 +71,7 @@ jobs:
       - name: Send deployment result to Lambda
         env:
           FUNCTION_NAME: ${{ vars.AWS_AUDIT_LAMBDA_NAME }}
-          DEPLOY_STATUS: ${{ needs.deploy-qa.result }}
+          DEPLOY_STATUS: ${{ needs.deploy-environment.result }}
           BASE_SHA: ${{ github.event.before }}
         run: |
           OBJECTS=$(git diff --name-only "$BASE_SHA" HEAD -- dev-snapshots/ \
@@ -79,7 +84,7 @@ jobs:
             --arg objects "$OBJECTS" \
             '{
               repository: $repo,
-              environment: "QA",
+              environment: "PROD",
               run_id: $run,
               status: $status,
               object: $objects,
