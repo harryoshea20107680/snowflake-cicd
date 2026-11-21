@@ -1,6 +1,6 @@
 # Post-deployment verification: QA, STAGE and PROD
 
-After `scripts/promote_snapshots.py --deploy` runs on an environment branch, `scripts/verify_deployment.py` independently verifies the approved changed snapshot objects in the target selected by `SNOWFLAKE_TARGET`:
+After `scripts/promote_snapshots.py --deploy` runs on an environment branch, `scripts/verify_deployment.py` independently verifies the approved changed `database/APP/` SQL definitions in the target selected by `SNOWFLAKE_TARGET`:
 
 | Git branch | Target (`SNOWFLAKE_TARGET`) | Database |
 |---|---|---|
@@ -29,10 +29,10 @@ Run `python3 -m unittest discover -s tests -v` for offline tests. PRs run the sa
 ## Demonstration
 
 1. In Snowflake DEV, create or update an allowed self-contained SQL object.
-2. Run `Sync Snowflake DEV snapshots` on `dev` and merge its generated PR into `dev`.
+2. Run `Sync Snowflake DEV definitions` on `dev` and merge its generated PR into `dev`.
 3. Promote `dev → qa → stage → main`, checking each PR's SQL policy and each target's deployment workflow before proceeding.
 4. Independently query the deployed objects in each Snowflake database using an authorised role.
-5. After PROD, confirm the AWS Lambda audit event in CloudWatch. QA and STAGE are not yet audited by AWS.
+5. After each QA, STAGE and PROD deployment, confirm its AWS Lambda audit event in CloudWatch.
 
 ## Limitations
 

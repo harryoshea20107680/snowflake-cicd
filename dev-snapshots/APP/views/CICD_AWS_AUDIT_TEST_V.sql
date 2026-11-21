@@ -1,4 +1,0 @@
-create or replace view CICD_AWS_AUDIT_TEST_V(
-	AUDIT_TEST_VALUE
-) as
-SELECT 1 AS AUDIT_TEST_VALUE;
