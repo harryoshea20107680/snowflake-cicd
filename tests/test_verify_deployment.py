@@ -20,7 +20,7 @@ class VerificationTests(unittest.TestCase):
     def change(folder: str, name: str, filename: str | None = None) -> Change:
         return Change(
             status="A",
-            path=Path(f"dev-snapshots/APP/{folder}/{filename or name + '.sql'}"),
+            path=Path(f"database/APP/{folder}/{filename or name + '.sql'}"),
             schema="APP",
             folder=folder,
             name=name,
