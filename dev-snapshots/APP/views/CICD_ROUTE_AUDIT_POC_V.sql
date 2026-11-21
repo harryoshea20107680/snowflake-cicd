@@ -1,0 +1,4 @@
+create or replace view CICD_ROUTE_AUDIT_POC_V(
+	ROUTE_TEST
+) as
+SELECT 1 AS ROUTE_TEST;
