@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Validate approved DEV snapshots and promote safe changes to Snowflake QA.
+"""Validate approved DEV snapshots and promote safe changes to the selected Snowflake environment.
 
 Usage:
-    python scripts/promote_qa.py --check --base BASE_COMMIT
-    python scripts/promote_qa.py --deploy --base PREVIOUS_MAIN_SHA
+    python scripts/promote_snapshots.py --check --base BASE_COMMIT
+    python scripts/promote_snapshots.py --deploy --base PREVIOUS_TARGET_BRANCH_SHA
 
 Snapshot removals, changed tables, inaccessible objects and unsupported DDL fail closed.
-No extracted CREATE OR REPLACE TABLE is executed against QA.
+Never execute extracted CREATE OR REPLACE TABLE against an environment target.
 """
 
 import argparse
@@ -22,8 +22,8 @@ ROOT = Path("dev-snapshots")
 TARGET = os.environ.get("SNOWFLAKE_TARGET", "QA").upper()
 if TARGET not in {"QA", "STAGE", "PROD"}:
     raise ValueError(f"Unsupported target environment: {TARGET}")
-QA_DB = f"CC_PROJECT_{TARGET}"
-QA_ROLE = "GITHUB_CICD_ROLE"
+TARGET_DB = f"CC_PROJECT_{TARGET}"
+DEPLOY_ROLE = "GITHUB_CICD_ROLE"
 WAREHOUSE = "CICD_WH"
 VALID_NAME = re.compile(r"[A-Z_][A-Z0-9_$]*\Z")
 ALLOWED_KINDS = {"tables": "TABLE", "views": "VIEW", "procedures": "PROCEDURE"}
@@ -146,7 +146,7 @@ def collect(base: str, *, allow_table_modifications: bool = False) -> list[Chang
     if report.exists():
         status = report.read_text(encoding="utf-8").strip().splitlines()
         if len(status) < 2 or status[1:] != ["None"]:
-            raise ValueError("DEV inventory reports missing or inaccessible objects; investigate before QA promotion")
+            raise ValueError("DEV inventory reports missing or inaccessible objects; investigate before promotion")
 
     changes = []
     for status, path in changed_files(base):
@@ -169,8 +169,8 @@ def collect(base: str, *, allow_table_modifications: bool = False) -> list[Chang
 
 
 def snow(sql: str, *, schema: str | None = None, json_output: bool = False):
-    command = ["snow", "sql", "--database", QA_DB,
-               "--warehouse", WAREHOUSE, "--role", QA_ROLE,
+    command = ["snow", "sql", "--database", TARGET_DB,
+               "--warehouse", WAREHOUSE, "--role", DEPLOY_ROLE,
                "--enhanced-exit-codes", "-x"]
     if schema:
         command += ["--schema", schema]
@@ -188,42 +188,42 @@ def snow(sql: str, *, schema: str | None = None, json_output: bool = False):
 
 def deploy(changes: list[Change]):
     if not changes:
-        print("No changed snapshot definitions. No QA deployment necessary.")
+        print(f"No changed snapshot definitions. No {TARGET} deployment necessary.")
         return
-    print(f"Promoting {len(changes)} approved snapshot(s) to {QA_DB}")
+    print(f"Promoting {len(changes)} approved snapshot(s) to {TARGET_DB}")
 
-    # Fail before executing any DDL when an added table name already exists in QA.
+    # Fail before executing any DDL when an added table name already exists in the target.
     for c in changes:
         if c.folder == "tables":
             rows = snow(
-                f"SELECT COUNT(*) AS N FROM {QA_DB}.INFORMATION_SCHEMA.TABLES "
+                f"SELECT COUNT(*) AS N FROM {TARGET_DB}.INFORMATION_SCHEMA.TABLES "
                 f"WHERE TABLE_SCHEMA = '{c.schema}' AND TABLE_NAME = '{c.name}'",
                 json_output=True,
             )
             if len(rows) != 1 or int(rows[0]["N"]) != 0:
-                raise ValueError(f"New table snapshot already exists in QA: {c.schema}.{c.name}; manual reconciliation required")
+                raise ValueError(f"New table snapshot already exists in {TARGET}: {c.schema}.{c.name}; manual reconciliation required")
 
     for c in changes:
         schema = c.schema
         # Quotes are safe because schema name is restricted to simple uppercase identifiers.
-        snow(f'CREATE SCHEMA IF NOT EXISTS {QA_DB}."{schema}"')
+        snow(f'CREATE SCHEMA IF NOT EXISTS {TARGET_DB}."{schema}"')
         sql = c.sql
         if c.folder == "tables":
             header = re.compile(r"^CREATE\s+(?:OR\s+REPLACE\s+)?TABLE\b", re.I)
             sql = header.sub("CREATE TABLE IF NOT EXISTS", sql, count=1)
             if not sql.startswith("CREATE TABLE IF NOT EXISTS"):
                 raise ValueError("Unsafe table header conversion")
-        # Every statement is executed in the QA database and matching schema.
+        # Every statement is executed in the target database and matching schema.
         print(f"Deploying {c.folder[:-1]} {schema}.{c.name} from {c.path}")
         snow(sql, schema=schema)
-    print("QA promotion completed. Confirm the deployed objects with an independent SQL query.")
+    print(f"{TARGET} promotion completed. Confirm the deployed objects with an independent SQL query.")
 
 
 def main():
     parser = argparse.ArgumentParser()
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--check", action="store_true", help="Fail unsafe snapshot PR changes")
-    mode.add_argument("--deploy", action="store_true", help="Deploy safe changed snapshots to QA")
+    mode.add_argument("--deploy", action="store_true", help="Deploy safe changed snapshots to the selected target environment")
     parser.add_argument("--base", required=True, help="Base SHA to diff against current HEAD")
     parser.add_argument("--source-sync", action="store_true",
                         help="Allow table snapshot updates for DEV review; never for deployment")

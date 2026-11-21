@@ -1,45 +1,15 @@
-# Snowflake DEV snapshots to approved QA promotion
+# Snowflake branch-based SQL promotion
 
-This patch changes the QA pipeline to use reviewed GitHub snapshot files.
+**Current design:** `dev → qa → stage → main` corresponds to Snowflake databases `CC_PROJECT_DEV → CC_PROJECT_QA → CC_PROJECT_STAGE → CC_PROJECT_PROD`.
 
-## Contents
-- `scripts/promote_qa.py`: validate snapshot diffs, then deploy approved changes.
-- `.github/workflows/validate-sql.yml`: keep the existing required `SQL Policy Check` and add snapshot-specific checks.
-- `.github/workflows/deploy-qa.yml`: deploy changed snapshots automatically when merged into `main`.
+Developer changes originate inside Snowflake DEV and are extracted by `sync-dev.yml` into Git SQL snapshot files. Subsequent PRs promote **the same reviewed SQL definitions** to QA, STAGE and PROD; they do not re-extract target-environment DDL.
 
-## Behaviour
-- New tables: `CREATE TABLE IF NOT EXISTS` after checking that the table does not already exist in QA.
-- Modified tables: rejected (a migration is required).
-- New/modified views or procedures: deploy from approved snapshot DDL, in the matching QA schema.
-- Deleted/inaccessible snapshots: rejected, without automatic destructive deletion.
-- Unchanged objects: not deployed again.
+- The required GitHub PR check is named **`SQL Policy Check`** and includes promotion-order rules, unit tests and conservative SQL checks.
+- `.github/workflows/deploy-environments.yml` deploys and verifies changed snapshots when they land on `qa`, `stage` or `main`.
+- `SNOWFLAKE_TARGET` selects the destination database (`QA`, `STAGE` or `PROD`).
+- `scripts/promote_snapshots.py` provides validation/deployment, and `scripts/verify_deployment.py` provides target-specific verification.
+- The AWS Lambda audit is enabled for `main`/PROD only, matching the configured IAM OIDC trust policy.
 
-## Install
-From the `snowflake-cicd` repo root:
+Review the full architecture and setup in [Multi-environment promotion](docs/MULTI-ENV-PROMOTION.md), and the smoke-test checks in [Deployment verification](docs/DEPLOYMENT-VERIFICATION.md).
 
-```bash
-git switch main
-git pull --ff-only origin main
-git switch -c feature/snapshot-qa-promotion
-unzip -o ~/Downloads/snapshot-qa-promotion.zip -d .
-git add scripts/promote_qa.py .github/workflows/validate-sql.yml .github/workflows/deploy-qa.yml
-git commit -m 'Deploy approved DEV snapshots safely to QA'
-git push -u origin feature/snapshot-qa-promotion
-gh pr create --base main --head feature/snapshot-qa-promotion --title 'Deploy approved DEV snapshots to QA' --body 'Dynamic snapshot-driven promotion with fail-closed table migration safety checks.'
-```
-
-## End-to-end test
-1. Merge the implementation PR when `SQL Policy Check` passes.
-2. Create a NEW view directly in Snowflake DEV under the developer role, referencing objects without qualified DEV database names.
-3. Run `Sync Snowflake DEV snapshots` on `main`.
-4. Open a PR from the created sync branch; review its DDL and verify the required SQL check.
-5. Merge the snapshot PR. A push to main under `dev-snapshots/**` triggers QA deployment automatically.
-6. Confirm the new view exists and queries successfully in QA.
-
-## Known limits
-- Not a comprehensive SQL parser or security checker. Reviewed source changes are still essential.
-- Existing-table structural modifications are rejected until migration support is built.
-- DROP/rename events, other Snowflake object types, and table row data are not promoted.
-- Cross-object dependencies, grants on replaced views, and schema migrations need more advanced handling.
-- DEV synchronization remains manual-triggered; no real-time CDC mechanism is configured.
-- A required passing status check does not itself guarantee independent human approval.
+**Limitations:** Table modifications need reviewed migrations. Snapshot deletion, missing/inaccessible objects and unsupported DDL fail closed. Existing objects may need reconciliation; dependency management, rollback and full functional testing are out of scope. GitHub branch rules must prevent direct pushes that bypass the PR check.
