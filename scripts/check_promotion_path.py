@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Enforce sequential PR promotion of SQL snapshots through environment branches.
+"""Enforce sequential PR promotion of database SQL through environment branches.
 
-Infrastructure-only PRs without dev-snapshots changes remain permissible.
+Infrastructure-only PRs without database/ changes remain permissible.
 Branch protection must separately prevent direct pushes to QA, STAGE and main.
 """
 
@@ -24,7 +24,7 @@ def assert_promotion_path(
     if base_branch not in VALID_TARGETS:
         raise ValueError(f"Unknown environment branch: {base_branch}")
     if not snapshot_changed:
-        print("No SQL snapshots changed; promotion source restriction not applicable.")
+        print("No database SQL changes; promotion source restriction not applicable.")
         return
     if head_repo != repository:
         raise ValueError("SQL snapshot promotion must originate in the same GitHub repository")
@@ -41,7 +41,7 @@ def changed_snapshots(base_sha: str) -> bool:
     if not re.fullmatch(r"[0-9a-fA-F]{40}", base_sha):
         raise ValueError("Expected full Git base commit SHA")
     result = subprocess.run(
-        ["git", "diff", "--name-only", "--no-renames", base_sha, "HEAD", "--", "dev-snapshots/"],
+        ["git", "diff", "--name-only", "--no-renames", base_sha, "HEAD", "--", "database/"],
         check=True,
         text=True,
         capture_output=True,

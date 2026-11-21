@@ -18,7 +18,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-ROOT = Path("dev-snapshots")
+ROOT = Path("database")
 TARGET = os.environ.get("SNOWFLAKE_TARGET", "QA").upper()
 if TARGET not in {"QA", "STAGE", "PROD"}:
     raise ValueError(f"Unsupported target environment: {TARGET}")
@@ -58,7 +58,7 @@ def changed_files(base: str) -> list[tuple[str, Path]]:
 
 def object_from_path(path: Path) -> tuple[str, str, str]:
     parts = path.parts
-    if len(parts) != 4 or parts[0] != "dev-snapshots" or parts[2] not in ALLOWED_KINDS or path.suffix != ".sql":
+    if len(parts) != 4 or parts[0] != "database" or parts[2] not in ALLOWED_KINDS or path.suffix != ".sql":
         raise ValueError(f"Unsupported snapshot file path: {path}")
     schema, folder, stem = parts[1], parts[2], path.stem
     if not VALID_NAME.fullmatch(schema):

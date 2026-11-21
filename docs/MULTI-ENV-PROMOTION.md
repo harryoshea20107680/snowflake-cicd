@@ -9,13 +9,13 @@
 | `stage` | `CC_PROJECT_STAGE` | Approved `qa → stage` PR triggers deployment, verification and AWS audit |
 | `main` | `CC_PROJECT_PROD` | Approved `stage → main` PR triggers deployment, verification and AWS Lambda audit |
 
-`dev-snapshots/` always contains **DEV-sourced** object definitions. QA/STAGE/PROD receive the same version-controlled DDL through reviewed PRs; they do not contribute replacement source snapshots. These are database environments, not separate geographic cloud regions.
+`database/APP/` contains **DEV-sourced** SQL definitions on each Git environment branch. Only the `dev` branch imports definitions from Snowflake; promotion PRs carry the approved SQL text to QA, STAGE and PROD. QA/STAGE/PROD receive the same version-controlled DDL through reviewed PRs; they do not contribute replacement source snapshots. These are database environments, not separate geographic cloud regions.
 
 ## Controls
 
 - GitHub ruleset `Snowflake Environment Branch Protection` targets all four environment branches. It requires a PR and passing **`SQL Policy Check`**, blocks force pushes, and prevents deletion. It currently requires **zero approving reviews**, so it does not guarantee independent sign-off.
-- The PR workflow validates the route, tests the Python verifier and rejects unsupported or unsafe snapshot changes.
-- `scripts/promote_snapshots.py` deploys changed, approved snapshots to `CC_PROJECT_QA`, `CC_PROJECT_STAGE` or `CC_PROJECT_PROD` according to `SNOWFLAKE_TARGET`.
+- The PR workflow validates the route, tests the Python verifier and rejects unsupported or unsafe database SQL changes.
+- `scripts/promote_snapshots.py` deploys changed, approved database SQL definitions to `CC_PROJECT_QA`, `CC_PROJECT_STAGE` or `CC_PROJECT_PROD` according to `SNOWFLAKE_TARGET`.
 - `scripts/verify_deployment.py` performs a non-destructive smoke verification of objects in that target environment.
 - GitHub Actions authenticates to Snowflake via OIDC. The AWS auditing job uses AWS OIDC to invoke Lambda after QA, STAGE and PROD deployments. It is also scheduled after unsuccessful deployments, to record failed or incomplete outcomes. The IAM trust policy must explicitly allow all three branch subjects.
 
@@ -35,7 +35,7 @@ The view is self-contained (`SELECT 1`), so it proves the promotion path without
 - New tables cannot overwrite an existing target table. Other existing objects may need reconciliation.
 - Procedures are verified by signature, not executed. Cross-object dependencies, grants, data migration, drift detection and rollback are not implemented.
 - The branch ruleset currently has **zero required independent reviewers**. A required passing check alone is not independent approval.
-- AWS/CloudWatch audit covers QA, STAGE and PROD after the AWS IAM trust policy is updated. Audit events report workflow outcomes, not an atomic database transaction or guaranteed rollback. Failed deployments may leave partial changes.
+- AWS/CloudWatch audit covers QA, STAGE and PROD with branch-scoped AWS IAM trust. Audit events report workflow outcomes, not an atomic database transaction or guaranteed rollback. Failed deployments may leave partial changes.
 - Direct commits that bypass protected-branch PR checks would invalidate the route-control assumptions.
 
 See [Deployment verification](DEPLOYMENT-VERIFICATION.md) and the [repository overview](../README.md).
