@@ -13,10 +13,10 @@ concurrency:
 
 jobs:
   sync-dev:
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/dev'
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout main
+      - name: Checkout dev
         uses: actions/checkout@v4
         with:
           persist-credentials: true
@@ -50,4 +50,4 @@ jobs:
           git push origin "HEAD:refs/heads/$BRANCH"
 
           echo "Review changes and open a pull request:" >> "$GITHUB_STEP_SUMMARY"
-          echo "https://github.com/${GH_REPO}/compare/main...${BRANCH}?expand=1" >> "$GITHUB_STEP_SUMMARY"
+          echo "https://github.com/${GH_REPO}/compare/dev...${BRANCH}?expand=1" >> "$GITHUB_STEP_SUMMARY"

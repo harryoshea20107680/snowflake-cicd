@@ -11,6 +11,7 @@ No extracted CREATE OR REPLACE TABLE is executed against QA.
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -18,7 +19,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 ROOT = Path("dev-snapshots")
-QA_DB = "CC_PROJECT_QA"
+TARGET = os.environ.get("SNOWFLAKE_TARGET", "QA").upper()
+if TARGET not in {"QA", "STAGE", "PROD"}:
+    raise ValueError(f"Unsupported target environment: {TARGET}")
+QA_DB = f"CC_PROJECT_{TARGET}"
 QA_ROLE = "GITHUB_CICD_ROLE"
 WAREHOUSE = "CICD_WH"
 VALID_NAME = re.compile(r"[A-Z_][A-Z0-9_$]*\Z")
@@ -127,7 +131,7 @@ def validate_definition(path: Path, kind: str, name: str) -> str:
     )
     if not pattern.match(ddl):
         raise ValueError(f"{path}: DDL must create {kind} {name} without a qualified name")
-    if re.search(r"(?i)\bCC_PROJECT_(?:DEV|STAGE|PROD)\b", ddl):
+    if re.search(r"(?i)\bCC_PROJECT_(?:DEV|QA|STAGE|PROD)\b", ddl):
         raise ValueError(f"{path}: environment-specific database reference")
     if "#UNKNOWN_" in ddl.upper():
         raise ValueError(f"{path}: incomplete object metadata")
@@ -137,7 +141,7 @@ def validate_definition(path: Path, kind: str, name: str) -> str:
     return ddl
 
 
-def collect(base: str) -> list[Change]:
+def collect(base: str, *, allow_table_modifications: bool = False) -> list[Change]:
     report = ROOT / "missing_or_inaccessible.txt"
     if report.exists():
         status = report.read_text(encoding="utf-8").strip().splitlines()
@@ -155,7 +159,7 @@ def collect(base: str) -> list[Change]:
         schema, folder, name = object_from_path(path)
         if status not in ("A", "M"):
             raise ValueError(f"Snapshot removals are not automatically promoted: {status} {path}")
-        if folder == "tables" and status != "A":
+        if folder == "tables" and status != "A" and not allow_table_modifications:
             raise ValueError(f"Table modifications need a reviewed migration: {path}")
         ddl = validate_definition(path, ALLOWED_KINDS[folder], name)
         changes.append(Change(status, path, schema, folder, name, ddl))
@@ -221,8 +225,12 @@ def main():
     mode.add_argument("--check", action="store_true", help="Fail unsafe snapshot PR changes")
     mode.add_argument("--deploy", action="store_true", help="Deploy safe changed snapshots to QA")
     parser.add_argument("--base", required=True, help="Base SHA to diff against current HEAD")
+    parser.add_argument("--source-sync", action="store_true",
+                        help="Allow table snapshot updates for DEV review; never for deployment")
     args = parser.parse_args()
-    changes = collect(args.base)
+    if args.source_sync and args.deploy:
+        parser.error("--source-sync cannot be used with --deploy")
+    changes = collect(args.base, allow_table_modifications=args.source_sync)
     print("Snapshot changes: " + (", ".join(str(c.path) for c in changes) if changes else "none"))
     if args.deploy:
         deploy(changes)

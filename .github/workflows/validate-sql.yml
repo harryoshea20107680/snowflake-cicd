@@ -3,6 +3,9 @@ name: Validate Snowflake SQL
 on:
   pull_request:
     branches:
+      - dev
+      - qa
+      - stage
       - main
 
 permissions:
@@ -22,10 +25,28 @@ jobs:
       - name: Run offline QA verification tests
         run: python3 -m unittest discover -s tests -v
 
+      - name: Enforce DEV to QA to STAGE to PROD promotion order
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_BASE: ${{ github.base_ref }}
+          PR_HEAD: ${{ github.head_ref }}
+          PR_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+        run: |
+          python3 scripts/check_promotion_path.py \
+            --base-sha "$BASE_SHA" --base-branch "$PR_BASE" \
+            --head-branch "$PR_HEAD" --head-repo "$PR_HEAD_REPO" \
+            --repository "$GITHUB_REPOSITORY"
+
       - name: Validate snapshot promotion policy
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: python3 scripts/promote_qa.py --check --base "$BASE_SHA"
+          PR_BASE: ${{ github.base_ref }}
+        run: |
+          if [ "$PR_BASE" = "dev" ]; then
+            python3 scripts/promote_qa.py --check --source-sync --base "$BASE_SHA"
+          else
+            python3 scripts/promote_qa.py --check --base "$BASE_SHA"
+          fi
 
       - name: Check existing SQL deployment policy
         run: |
