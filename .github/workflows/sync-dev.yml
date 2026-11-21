@@ -1,4 +1,4 @@
-name: Sync Snowflake DEV snapshots
+name: Sync Snowflake DEV definitions
 
 on:
   workflow_dispatch:
@@ -27,16 +27,16 @@ jobs:
           use-oidc: true
           cli-version: '3.16'
 
-      - name: Discover and snapshot DEV SQL objects
+      - name: Discover and capture DEV SQL objects
         env:
           SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
         run: python3 scripts/sync_dev.py
 
-      - name: Commit snapshots for review
+      - name: Commit DEV SQL definitions for review
         env:
           GH_REPO: ${{ github.repository }}
         run: |
-          git add -A dev-snapshots/
+          git add -A database/
           if git diff --cached --quiet; then
             echo 'No DEV definition changes found.' >> "$GITHUB_STEP_SUMMARY"
             exit 0
@@ -46,7 +46,7 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git switch -c "$BRANCH"
-          git commit -m 'Snapshot Snowflake DEV object definitions'
+          git commit -m 'Sync Snowflake DEV object definitions'
           git push origin "HEAD:refs/heads/$BRANCH"
 
           echo "Review changes and open a pull request:" >> "$GITHUB_STEP_SUMMARY"

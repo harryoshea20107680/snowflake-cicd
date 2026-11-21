@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Capture visible DEV tables, views and procedures as review-only Git snapshots.
+"""Capture visible DEV tables, views and procedures into canonical database/ SQL files.
 
 Requires Snowflake CLI OIDC configuration from snowflakedb/snowflake-actions.
 Does not execute extracted DDL or remove files for missing objects.
@@ -14,7 +14,7 @@ from pathlib import Path
 DATABASE = "CC_PROJECT_DEV"
 ROLE = "GITHUB_CICD_ROLE"
 WAREHOUSE = "CICD_WH"
-DESTINATION = Path("dev-snapshots")
+DESTINATION = Path("database")
 
 # Keep output paths predictable; fail on quoted/special names instead of skipping.
 SIMPLE_NAME = re.compile(r"^[A-Z_][A-Z0-9_$]*$")

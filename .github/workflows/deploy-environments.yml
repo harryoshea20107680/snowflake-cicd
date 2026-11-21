@@ -1,4 +1,4 @@
-name: Promote approved SQL snapshots across environments
+name: Promote approved database SQL across environments
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
       - stage
       - main
     paths:
-      - 'dev-snapshots/**'
+      - 'database/**'
 
 permissions:
   contents: read
@@ -76,7 +76,7 @@ jobs:
           DEPLOY_STATUS: ${{ needs.deploy-environment.result }}
           BASE_SHA: ${{ github.event.before }}
         run: |
-          OBJECTS=$(git diff --name-only "$BASE_SHA" HEAD -- dev-snapshots/ \
+          OBJECTS=$(git diff --name-only "$BASE_SHA" HEAD -- database/ \
             | awk '/\.sql$/ {print}' | paste -sd ',' -)
 
           PAYLOAD=$(jq -n \

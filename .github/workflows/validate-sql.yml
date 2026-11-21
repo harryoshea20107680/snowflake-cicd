@@ -37,7 +37,7 @@ jobs:
             --head-branch "$PR_HEAD" --head-repo "$PR_HEAD_REPO" \
             --repository "$GITHUB_REPOSITORY"
 
-      - name: Validate snapshot promotion policy
+      - name: Validate database SQL promotion policy
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           PR_BASE: ${{ github.base_ref }}
@@ -48,7 +48,7 @@ jobs:
             python3 scripts/promote_snapshots.py --check --base "$BASE_SHA"
           fi
 
-      - name: Check existing SQL deployment policy
+      - name: Check canonical database SQL policy
         run: |
           python3 - <<'PY'
           from pathlib import Path
