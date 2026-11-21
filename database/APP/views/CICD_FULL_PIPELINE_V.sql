@@ -1,0 +1,4 @@
+create or replace view CICD_FULL_PIPELINE_V(
+	PROMOTION_TEST
+) as
+SELECT 1 AS PROMOTION_TEST;
