@@ -1,39 +1,43 @@
-# Snowflake CI/CD — DEV → QA → STAGE → PROD
+# Snowflake CI/CD — Cloud Computing Project
 
-A cloud-native CI/CD proof of concept using **Snowflake**, **GitHub Actions**, **GitHub OIDC** and **AWS Lambda/CloudWatch**.
+A university proof of concept for promoting Snowflake database objects through **DEV → QA → STAGE → PROD** using GitHub Actions, Snowflake OIDC and AWS Lambda/CloudWatch.
 
-## Environment mapping
+## Architecture
 
-| Git branch | Snowflake environment | Purpose |
-|---|---|---|
-| `dev` | `CC_PROJECT_DEV` | Developers edit objects in DEV; `sync-dev.yml` captures definitions for review in Git |
-| `qa` | `CC_PROJECT_QA` | Reviewed `dev → qa` PR triggers QA deployment and smoke verification |
-| `stage` | `CC_PROJECT_STAGE` | Reviewed `qa → stage` PR triggers STAGE deployment and smoke verification |
-| `main` | `CC_PROJECT_PROD` | Reviewed `stage → main` PR triggers PROD deployment, verification and AWS Lambda auditing |
+| Git branch | Snowflake database |
+|---|---|
+| `dev` | `CC_PROJECT_DEV` |
+| `qa` | `CC_PROJECT_QA` |
+| `stage` | `CC_PROJECT_STAGE` |
+| `main` | `CC_PROJECT_PROD` |
 
-The workflow copies reviewed DEV DDL **between Git branches**. It does not extract SQL back from QA, STAGE or PROD. PR checks enforce valid promotion order; branch rules require a passing `SQL Policy Check` and PR merge before promotion. The AWS audit role currently trusts `main` only, so CloudWatch deployment auditing runs for PROD only.
+SQL definitions are stored in `database/APP/` on each branch. Snowflake DEV is the source of the definitions; approved pull requests promote those files in order from `dev` to `main`.
 
-## Workflows and scripts
+## Implemented
 
-- `.github/workflows/sync-dev.yml` — manual DEV snapshot sync (run on `dev`)
-- `.github/workflows/validate-sql.yml` — PR policy checks and offline unit tests (`SQL Policy Check`)
-- `.github/workflows/deploy-environments.yml` — environment-specific deployment and verification (`qa`, `stage`, `main`), followed by AWS auditing for PROD
-- `scripts/sync_dev.py` — discover objects in DEV and record `GET_DDL` snapshots
-- `scripts/promote_snapshots.py` — validate snapshots and deploy only changed supported objects
-- `scripts/verify_deployment.py` — verify target object metadata and compile views without reading rows
-- `scripts/check_promotion_path.py` — block out-of-order snapshot PRs
+- **DEV sync:** `GET_DDL` captures tables, views and procedures from Snowflake DEV into Git.
+- **PR validation:** the `SQL Policy Check` runs Python tests and checks SQL safety and promotion order.
+- **Deployment:** GitHub Actions deploys changed SQL to QA, STAGE and PROD using Snowflake OIDC authentication.
+- **Verification:** post-deployment checks confirm object metadata and view compilation.
+- **Audit:** AWS OIDC invokes a Lambda function after QA, STAGE and PROD deployment attempts; the function records audit information in CloudWatch.
 
-## How to demonstrate
+## End-to-end demonstration
 
-1. Create a new self-contained view in `CC_PROJECT_DEV.APP`.
-2. Run **Sync Snowflake DEV snapshots** on the `dev` branch; review and merge the generated PR into `dev`.
-3. Open and validate `dev → qa`; merge, then verify `CC_PROJECT_QA`.
-4. Open and validate `qa → stage`; merge, then verify `CC_PROJECT_STAGE`.
-5. Open and validate `stage → main`; review carefully, merge, verify `CC_PROJECT_PROD` and inspect the AWS Lambda/CloudWatch audit event.
-6. As a negative test, open an invalid snapshot PR that skips an environment and confirm `SQL Policy Check` fails; do **not** merge it.
+`CICD_CANONICAL_DATABASE_V` was captured from DEV and promoted successfully through all four environments:
 
-Run offline checks locally: `python3 -m unittest discover -s tests -v`.
+| Step | Evidence |
+|---|---|
+| DEV capture | [PR #46](https://github.com/harryoshea20107680/snowflake-cicd/pull/46) |
+| QA deployment and audit | [Run #45038206116](https://github.com/harryoshea20107680/snowflake-cicd/actions/runs/45038206116) |
+| STAGE deployment and audit | [Run #45038636180](https://github.com/harryoshea20107680/snowflake-cicd/actions/runs/45038636180) |
+| PROD deployment and audit | [Run #45039057826](https://github.com/harryoshea20107680/snowflake-cicd/actions/runs/45039057826) |
 
-## Scope and caveats
+## Repository contents
 
-This is a controlled proof of concept, not a production migration engine. The SQL checks are intentionally limited: existing-table changes, deletions and unsupported definitions are not promoted automatically. The smoke checks do not validate data parity or execute procedures. Deployment failures may leave partial changes; there is no automatic rollback or cross-object dependency resolution. Branches are release records, not a full reconciliation of historic database objects. Only PROD invokes AWS Lambda today. See `docs/MULTI-ENV-PROMOTION.md` and `docs/DEPLOYMENT-VERIFICATION.md`.
+- `database/APP/` — version-controlled SQL definitions
+- `.github/workflows/` — DEV sync, PR validation, deployment and OIDC connection check
+- `scripts/` — Python sync, policy, deployment and verification logic
+- `tests/` — automated tests run by the PR validation workflow
+- `docs/` — brief [architecture](docs/MULTI-ENV-PROMOTION.md) and [verification](docs/DEPLOYMENT-VERIFICATION.md) notes
+
+**Scope:** This is an academic proof of concept, not a production migration framework. It does not provide automatic rollback, full data-parity checks or automatic migration of existing tables.

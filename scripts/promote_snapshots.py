@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Called by: .github/workflows/validate-sql.yml (SQL policy checks).
+#            .github/workflows/deploy-environments.yml (QA/STAGE/PROD deployment).
 """Validate approved DEV snapshots and promote safe changes to the selected Snowflake environment.
 
 Usage:

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Called by: .github/workflows/deploy-environments.yml (post-deployment checks).
 """Non-destructively verify objects promoted by the approved DEV snapshot diff.
 
 Run after promote_snapshots.py --deploy using the same previous target-branch base SHA.

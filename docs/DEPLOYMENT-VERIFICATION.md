@@ -1,39 +1,24 @@
-# Post-deployment verification: QA, STAGE and PROD
+# Deployment verification and audit
 
-After `scripts/promote_snapshots.py --deploy` runs on an environment branch, `scripts/verify_deployment.py` independently verifies the approved changed `database/APP/` SQL definitions in the target selected by `SNOWFLAKE_TARGET`:
+Following deployment to QA, STAGE or PROD, `scripts/verify_deployment.py` checks the objects changed in the approved Git commit.
 
-| Git branch | Target (`SNOWFLAKE_TARGET`) | Database |
+## Verification performed
+
+- **Tables:** confirm exactly one matching base table exists.
+- **Views:** confirm the view exists and compile a `SELECT * ... LIMIT 0` query without retrieving data.
+- **Procedures:** confirm the expected procedure argument signature without executing the procedure.
+- **No SQL changes:** no database object verification is needed.
+
+The target databases are `CC_PROJECT_QA`, `CC_PROJECT_STAGE` and `CC_PROJECT_PROD`.
+
+## Evidence from the final test
+
+| Environment | Verified workflow | Result |
 |---|---|---|
-| `qa` | `QA` | `CC_PROJECT_QA` |
-| `stage` | `STAGE` | `CC_PROJECT_STAGE` |
-| `main` | `PROD` | `CC_PROJECT_PROD` |
+| QA | [Run #45038206116](https://github.com/harryoshea20107680/snowflake-cicd/actions/runs/45038206116) | View verified; Lambda returned `logged: true` |
+| STAGE | [Run #45038636180](https://github.com/harryoshea20107680/snowflake-cicd/actions/runs/45038636180) | View verified; Lambda returned `logged: true` |
+| PROD | [Run #45039057826](https://github.com/harryoshea20107680/snowflake-cicd/actions/runs/45039057826) | View verified; Lambda returned `logged: true` |
 
-Both deployment and verification use the same previous **target-branch** commit SHA supplied by `github.event.before`.
+These results confirm successful GitHub Actions deployments, Snowflake smoke verification and Lambda logging acknowledgements. A separate CloudWatch log inspection can provide additional audit evidence.
 
-## Checks
-
-- **Tables:** metadata confirms exactly one matching base table in the target database.
-- **Views:** metadata confirms exactly one matching view; a `SELECT * ... LIMIT 0` query checks compilation without fetching rows.
-- **Procedures:** metadata must contain the same overloaded argument signature as the promoted snapshot; procedures are not executed, because they may change data.
-- **No snapshot changes:** finishes successfully without issuing Snowflake SQL.
-
-Successful output should include the actual target, for example:
-
-```
-VERIFIED VIEW: CC_PROJECT_STAGE.APP.CICD_FULL_PIPELINE_V
-STAGE post-deployment verification PASSED (1 object(s)).
-```
-
-Run `python3 -m unittest discover -s tests -v` for offline tests. PRs run the same tests under the `SQL Policy Check` job.
-
-## Demonstration
-
-1. In Snowflake DEV, create or update an allowed self-contained SQL object.
-2. Run `Sync Snowflake DEV definitions` on `dev` and merge its generated PR into `dev`.
-3. Promote `dev → qa → stage → main`, checking each PR's SQL policy and each target's deployment workflow before proceeding.
-4. Independently query the deployed objects in each Snowflake database using an authorised role.
-5. After each QA, STAGE and PROD deployment, confirm its AWS Lambda audit event in CloudWatch.
-
-## Limitations
-
-Smoke checks prove existence and view compilation, not business correctness, data parity or rollback. A verification failure happens *after* SQL execution and cannot reverse prior statements. Unsupported DDL, snapshot deletions, and existing table migrations require manual review. Prior objects in the target are not automatically reconciled.
+**Limitation:** Smoke checks do not prove business correctness or data parity. SQL execution is not atomic across an entire promotion, and failed deployments are not automatically rolled back.
