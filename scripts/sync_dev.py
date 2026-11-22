@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Called by: .github/workflows/sync-dev.yml (DEV definition capture).
 """Capture visible DEV tables, views and procedures into canonical database/ SQL files.
 
 Requires Snowflake CLI OIDC configuration from snowflakedb/snowflake-actions.

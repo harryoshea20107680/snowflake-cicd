@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Called by: .github/workflows/validate-sql.yml (PR promotion-order check).
 """Enforce sequential PR promotion of database SQL through environment branches.
 
 Infrastructure-only PRs without database/ changes remain permissible.
