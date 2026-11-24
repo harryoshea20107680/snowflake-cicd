@@ -1,0 +1,4 @@
+create or replace view CICD_DEMO_V(
+	DEMO_STATUS
+) as
+SELECT 'DEMO DATA' AS DEMO_STATUS;
